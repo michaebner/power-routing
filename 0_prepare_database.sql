@@ -11,4 +11,4 @@ CREATE EXTENSION postgis;
 CREATE EXTENSION pgrouting;
 CREATE SCHEMA gridkit;
 
-SET SEARCH_PATH TO gridkit;
+SET SEARCH_PATH TO gridkit, public;

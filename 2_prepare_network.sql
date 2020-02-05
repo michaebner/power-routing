@@ -131,7 +131,7 @@ INSERT INTO source_target (voltage, point)
 	 -- start/endpoints that fall within a substation are supposed to become crossings later
 	 -- they will be identified by the voltage tag -9999
 	  pt_substations AS (
-		  SELECT id,
+		  SELECT a.id,
 		         -9999 AS voltage
 			FROM all_points              a
 				     JOIN power_stations s
@@ -208,7 +208,8 @@ SELECT l_id,
        st_geohash(st_transform(endpoint, 4326))   AS endpoint_hash
   FROM gridkit_power_line_voltage_routing_network;
 
--- a starting segment of the main network needs to be identified and its l_id must replace the placeholder '?'
+-- a starting segment of the main network (gridkit_power_line_voltage_routing_network) needs to be identified
+-- and its l_id must replace the placeholder '?'
 DROP TABLE IF EXISTS recursion_network;
 CREATE TEMP TABLE recursion_network AS (
 	  WITH RECURSIVE network AS (
@@ -244,22 +245,25 @@ CREATE TEMP TABLE recursion_network AS (
  */
 
 -- update network table
- UPDATE osm_grid.gridkit_power_line_voltage_routing_network
+UPDATE gridkit_power_line_voltage_routing_network
    SET part_of_network = TRUE
  WHERE l_id IN (SELECT l_id
-                FROM recursion_network);
+                  FROM recursion_network);
 
 -- update nodes table
+ALTER TABLE gridkit_power_line_voltage_routing_network_vertices_pgr
+	ADD COLUMN part_of_network BOOLEAN DEFAULT FALSE;
+
   WITH network_segments AS (
 	  SELECT source AS id
-		FROM osm_grid.gridkit_power_line_voltage_routing_network
+		FROM gridkit_power_line_voltage_routing_network
 	   WHERE part_of_network IS TRUE
 	   UNION ALL
 	  SELECT target AS id
-		FROM osm_grid.gridkit_power_line_voltage_routing_network
+		FROM gridkit_power_line_voltage_routing_network
 	   WHERE part_of_network IS TRUE
   )
-UPDATE osm_grid.gridkit_power_line_voltage_routing_network_vertices_pgr
+UPDATE gridkit_power_line_voltage_routing_network_vertices_pgr
    SET part_of_network = TRUE
  WHERE id IN (SELECT id
                 FROM network_segments);
@@ -267,14 +271,14 @@ UPDATE osm_grid.gridkit_power_line_voltage_routing_network_vertices_pgr
 -- update source/target table
   WITH network_segments AS (
 	  SELECT source AS id
-		FROM osm_grid.gridkit_power_line_voltage_routing_network
+		FROM gridkit_power_line_voltage_routing_network
 	   WHERE part_of_network IS TRUE
 	   UNION ALL
 	  SELECT target AS id
-		FROM osm_grid.gridkit_power_line_voltage_routing_network
+		FROM gridkit_power_line_voltage_routing_network
 	   WHERE part_of_network IS TRUE
   )
-UPDATE osm_grid.gridkit_power_line_voltage_source_target
+UPDATE source_target
    SET part_of_network = TRUE
  WHERE id IN (SELECT id
                 FROM network_segments);
@@ -283,13 +287,37 @@ UPDATE osm_grid.gridkit_power_line_voltage_source_target
   WITH conns AS (
 	  SELECT a.id,
 	         array_agg(b.voltage) AS voltages
-		FROM osm_grid.gridkit_power_line_voltage_source_target            a
-			     JOIN osm_grid.gridkit_power_line_voltage_routing_network b
+		FROM source_target                                       a
+			     JOIN gridkit_power_line_voltage_routing_network b
 			          ON (a.id = b.source OR a.id = b.target)
 	   WHERE a.part_of_network IS TRUE
 	   GROUP BY 1
   )
-UPDATE osm_grid.gridkit_power_line_voltage_source_target a
+UPDATE source_target a
    SET voltage_connected = conns.voltages
   FROM conns
  WHERE a.id = conns.id;
+
+/*
+ Fill nk and nuts tables with external data:
+
+ You will need data of net-nodes to fill the table "nk". Refer to OSM to extract own net-nodes.
+ You will also need NUTS-3 and NUTS-0 geometries.
+ Refer to https://openenergy-platform.org/dataedit/view/boundaries/ffe_osm_nuts3 for NUTS-3 geoms.
+ You can then aggregate NUTS-3 to NUTS-0
+ */
+
+INSERT INTO nk (id_region, geom_3857, geom_4326)
+SELECT id_region,
+       st_transform(geom_3035, 3857),
+       geom_4326
+  FROM MY_NET_NODES_TABLE;
+
+INSERT INTO nuts3 (id_region_type, id_region, name, geom_4326, geom_3035, geom_3857)
+SELECT 38,
+       id_region,
+       name,
+       geom_4326,
+       geom_3035,
+       st_transform(geom_3035, 3857)
+  FROM MY_NUTS_TABLE;
