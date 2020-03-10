@@ -6,3 +6,5 @@ This set of SQL files will help you implement a database, set up PostGIS and pgR
 Script 4 provides custom SQL routing functions like a Dijkstra Many to Many function that takes a set of GEOMVALs as input and output and will find the shortest path of each start to each end point.
 
 If you have any questions or find any bugs, don't hesitate to contact me at mebner@ffe.de
+
+An article describing the method and analyses in further details is available in German here: https://emagazin.et-magazin.de/de/profiles/cb1a7fd451c4/editions/5a347ffa384284f264ea
